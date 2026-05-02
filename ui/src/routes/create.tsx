@@ -259,7 +259,7 @@ export function CreatePage() {
                             </label>
                             <input
                               type="range"
-                              min={4}
+                              min={5}
                               max={8}
                               value={sceneCount}
                               onChange={(e) => setSceneCount(Number(e.target.value))}
@@ -274,7 +274,7 @@ export function CreatePage() {
                             <input
                               type="range"
                               min={45}
-                              max={90}
+                              max={80}
                               value={targetDurationSec}
                               onChange={(e) => setTargetDurationSec(Number(e.target.value))}
                               className="w-full accent-[var(--color-primary)]"
