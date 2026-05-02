@@ -30,7 +30,12 @@ export interface Job {
   etaSec?: number;
   progress: number;
   error?: string;
-  logLines?: string[];
+  /**
+   * In-memory log buffer for the live-progress panel. Each entry's `ts` is
+   * captured client-side when the SSE `log` event arrives, so timestamps
+   * reflect when the line was *received*, not when the row is rendered.
+   */
+  logLines?: { ts: string; text: string }[];
   /** Available when at 'review' step (raw backend script). */
   script?: ScriptDoc;
 }

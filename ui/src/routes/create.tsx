@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,15 +14,19 @@ export function CreatePage() {
   const [mode, setMode] = useState<'url' | 'text'>('url');
   const [url, setUrl] = useState('');
   const [text, setText] = useState('');
+  const [textFileName, setTextFileName] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tone, setTone] = useState('energetic');
-  
+  const [sceneCount, setSceneCount] = useState(6);
+  const [targetDurationSec, setTargetDurationSec] = useState(60);
+
   const { currentJob, setCurrentJob } = useAppStore();
   const { mutate, isPending } = useCreateJob();
   const approveScript = useApproveScript();
   const cancelJob = useCancelJob();
-  
+
   const logRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (logRef.current) {
@@ -29,10 +34,33 @@ export function CreatePage() {
     }
   }, [currentJob?.logLines]);
 
+  const readTxtFile = (file: File) => {
+    if (!/\.txt$/i.test(file.name) && file.type && !file.type.startsWith('text/')) {
+      toast({ title: 'Chỉ nhận file .txt', variant: 'destructive' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result ?? '');
+      setText(content);
+      setTextFileName(file.name);
+    };
+    reader.onerror = () => {
+      toast({ title: 'Không đọc được file', variant: 'destructive' });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) readTxtFile(file);
+  };
+
   const handleCreate = () => {
     mutate({
-      source: mode === 'url' ? { kind: 'url', url } : { kind: 'text', title: 'Bài viết tự nhập', content: text },
-      options: { tone: tone as any }
+      source: mode === 'url' ? { kind: 'url', url } : { kind: 'text', title: textFileName ?? 'Bài viết tự nhập', content: text },
+      options: { tone: tone as any, sceneCount, targetDurationSec },
     });
   };
 
@@ -139,10 +167,42 @@ export function CreatePage() {
                 </motion.div>
               ) : (
                 <motion.div key="text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                  <div className="border-2 border-dashed border-[var(--border-color)] rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 transition-all">
+                  <div
+                    className="border-2 border-dashed border-[var(--border-color)] rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 transition-all"
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                  >
                     <FileText className="w-10 h-10 text-[var(--text-muted)] mb-4" />
                     <p className="font-medium mb-1">Kéo thả file .txt vào đây</p>
                     <p className="text-xs text-[var(--text-muted)]">hoặc click để chọn file từ máy</p>
+                    {textFileName && (
+                      <p className="text-xs text-[var(--color-primary)] mt-3">Đã chọn: {textFileName}</p>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".txt,text/plain"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) readTxtFile(f);
+                        e.target.value = '';
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Hoặc dán nội dung trực tiếp</label>
+                    <textarea
+                      placeholder="Dán nội dung bài viết vào đây..."
+                      className="w-full bg-black/20 border border-[var(--border-color)] rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)] transition-all resize-y min-h-[160px]"
+                      value={text}
+                      onChange={(e) => {
+                        setText(e.target.value);
+                        if (textFileName) setTextFileName(null);
+                      }}
+                    />
+                    <p className="text-xs text-[var(--text-muted)] mt-1">{text.length.toLocaleString('vi-VN')} ký tự</p>
                   </div>
                 </motion.div>
               )}
@@ -195,16 +255,30 @@ export function CreatePage() {
                          <div>
                             <label className="flex justify-between text-sm font-medium mb-2">
                               <span>Số cảnh mong muốn</span>
-                              <span className="text-[var(--color-primary)]">6</span>
+                              <span className="text-[var(--color-primary)]">{sceneCount}</span>
                             </label>
-                            <input type="range" min="4" max="8" defaultValue="6" className="w-full accent-[var(--color-primary)]" />
+                            <input
+                              type="range"
+                              min={4}
+                              max={8}
+                              value={sceneCount}
+                              onChange={(e) => setSceneCount(Number(e.target.value))}
+                              className="w-full accent-[var(--color-primary)]"
+                            />
                          </div>
                          <div>
                             <label className="flex justify-between text-sm font-medium mb-2">
                               <span>Thời lượng</span>
-                              <span className="text-[var(--color-primary)]">60s</span>
+                              <span className="text-[var(--color-primary)]">{targetDurationSec}s</span>
                             </label>
-                            <input type="range" min="45" max="90" defaultValue="60" className="w-full accent-[var(--color-primary)]" />
+                            <input
+                              type="range"
+                              min={45}
+                              max={90}
+                              value={targetDurationSec}
+                              onChange={(e) => setTargetDurationSec(Number(e.target.value))}
+                              className="w-full accent-[var(--color-primary)]"
+                            />
                          </div>
                       </div>
                     </div>
@@ -304,7 +378,10 @@ export function CreatePage() {
               <div className="text-[#A78BFA] mb-1 font-bold">Terminal logs</div>
               <div className="flex-1 overflow-y-auto text-gray-400 leading-relaxed pr-2" ref={logRef}>
                 {currentJob.logLines?.map((line, i) => (
-                  <div key={i}><span className="text-gray-600 mr-2">{new Date().toISOString().substring(11, 19)}</span>{line}</div>
+                  <div key={i}>
+                    <span className="text-gray-600 mr-2">{line.ts.substring(11, 19)}</span>
+                    {line.text}
+                  </div>
                 ))}
               </div>
             </div>

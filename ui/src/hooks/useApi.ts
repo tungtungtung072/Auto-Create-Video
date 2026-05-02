@@ -58,7 +58,9 @@ export function useCreateJob() {
         currentStep: 0,
         totalSteps: 8,
         progress: 0,
-        logLines: ["Đã đưa vào hàng đợi xử lý..."],
+        logLines: [
+          { ts: new Date().toISOString(), text: "Đã đưa vào hàng đợi xử lý..." },
+        ],
       };
       setCurrentJob(initialJob);
       streamJob(jobId, videoId, setCurrentJob, () => refreshLibrary());
@@ -113,7 +115,11 @@ function streamJob(
 
   es.addEventListener("log", (ev) => {
     const data = JSON.parse((ev as MessageEvent).data);
-    update({ logLines: [...(job.logLines ?? []), data.line].slice(-200) });
+    // Capture the timestamp when the line arrives so the UI can show a
+    // meaningful per-line time. Using new Date() at render time would give
+    // every visible row the same timestamp.
+    const entry = { ts: new Date().toISOString(), text: String(data.line) };
+    update({ logLines: [...(job.logLines ?? []), entry].slice(-200) });
   });
 
   es.addEventListener("scriptReady", (ev) => {
