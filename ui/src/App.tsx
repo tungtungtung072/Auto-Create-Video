@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from './components/Layout';
+import { Toaster } from './components/ui/toaster';
 import { OnboardingPage } from './routes/onboarding';
 import { CreatePage } from './routes/create';
 import { LibraryPage } from './routes/library';
@@ -12,7 +13,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/onboarding" element={<OnboardingPage />} />
-        
+
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/create" replace />} />
           <Route path="/create" element={<CreatePage />} />
@@ -22,6 +23,9 @@ export default function App() {
           <Route path="/health" element={<HealthPage />} />
         </Route>
       </Routes>
+      {/* Toaster lives outside <Routes> so toasts render on every route,
+          including /onboarding which doesn't go through AppLayout. */}
+      <Toaster />
     </BrowserRouter>
   );
 }
