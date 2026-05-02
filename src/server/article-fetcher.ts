@@ -85,14 +85,28 @@ export async function fetchArticle(url: string): Promise<ExtractedArticle> {
   const domain = safeDomain(finalUrl);
   return {
     title: clean(ogTitle ?? "(Không có tiêu đề)"),
-    content: clean(content).slice(0, 8000),
+    content: cleanMultiline(content).slice(0, 8000),
     ogImage: ogImage ? absUrl(ogImage, finalUrl) : null,
     domain,
   };
 }
 
+/** Single-line clean: collapses ALL whitespace (including newlines) into a single space. */
 function clean(s: string): string {
   return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Multi-line clean: collapses runs of horizontal whitespace within a line, but
+ * preserves paragraph breaks. Used for article body so the LLM sees structured
+ * paragraphs instead of one wall of text.
+ */
+function cleanMultiline(s: string): string {
+  return s
+    .replace(/[^\S\n]+/g, " ") // collapse spaces/tabs but keep \n
+    .replace(/ *\n */g, "\n") // strip spaces around newlines
+    .replace(/\n{3,}/g, "\n\n") // cap at one blank line between paragraphs
+    .trim();
 }
 
 function absUrl(maybeRel: string, base: string): string {

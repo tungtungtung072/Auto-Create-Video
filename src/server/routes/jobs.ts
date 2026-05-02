@@ -50,32 +50,52 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { id: string } }>("/api/jobs/:id/stream", async (req, reply) => {
+    // Tell Fastify we're taking over the response — otherwise the implicit
+    // `return undefined` from this async handler would trigger Fastify to send
+    // its own response after we've already flushed SSE headers.
+    reply.hijack();
     reply.raw.setHeader("Content-Type", "text/event-stream");
     reply.raw.setHeader("Cache-Control", "no-cache");
     reply.raw.setHeader("Connection", "keep-alive");
     reply.raw.flushHeaders?.();
 
-    const send = (e: JobEvent) => {
-      reply.raw.write(`event: ${e.type}\n`);
-      reply.raw.write(`data: ${JSON.stringify(e.payload)}\n\n`);
-    };
-    const off = listenToJob(req.params.id, send);
-    req.raw.on("close", () => {
+    let off: () => void = () => {};
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let cleaned = false;
+    const cleanup = (): void => {
+      if (cleaned) return;
+      cleaned = true;
       off();
+      if (heartbeat) clearInterval(heartbeat);
       try {
         reply.raw.end();
       } catch {}
-    });
+    };
+
+    // SSE writes must be guarded: if the client disconnects mid-job, writing
+    // to the destroyed socket throws synchronously through the EventEmitter
+    // and would otherwise propagate up to writeError() and kill the job.
+    const send = (e: JobEvent): void => {
+      try {
+        reply.raw.write(`event: ${e.type}\n`);
+        reply.raw.write(`data: ${JSON.stringify(e.payload)}\n\n`);
+      } catch {
+        cleanup();
+      }
+    };
+    off = listenToJob(req.params.id, send);
 
     // Heartbeat every 15s so reverse proxies don't kill the connection.
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       try {
         reply.raw.write(`: keep-alive\n\n`);
       } catch {
-        clearInterval(heartbeat);
+        cleanup();
       }
     }, 15000);
-    req.raw.on("close", () => clearInterval(heartbeat));
+
+    req.raw.on("close", cleanup);
+    req.raw.on("error", cleanup);
   });
 
   app.get<{ Params: { id: string } }>("/api/jobs/:id", async (req, reply) => {
