@@ -492,7 +492,15 @@ function startRerenderInner(videoId: string, outputDir: string, script: Script):
       job.emitter.emit("event", { type: "log", payload: { line } });
     };
     try {
+      // Mirror the main pipeline's setStep(): keep the in-memory job state
+      // in sync with what we emit on SSE so GET /api/jobs/:id and late SSE
+      // subscribers don't see stale (currentStep:0, progress:0) values.
       job.status = "rendering";
+      job.currentStep = 7;
+      job.progress = 50;
+      db.prepare(
+        "UPDATE jobs SET status=?, current_step=?, progress=? WHERE id=?",
+      ).run("rendering", 7, 50, job.id);
       db.prepare("UPDATE videos SET status=? WHERE id=?").run("rendering", videoId);
       job.emitter.emit("event", {
         type: "progress",
@@ -519,12 +527,18 @@ function startRerenderInner(videoId: string, outputDir: string, script: Script):
       db.prepare(
         "UPDATE videos SET status=?, finished_at=?, error=NULL WHERE id=?",
       ).run("done", new Date().toISOString(), videoId);
-      db.prepare("UPDATE jobs SET status=?, finished_at=? WHERE id=?").run(
-        "done",
-        new Date().toISOString(),
-        job.id,
-      );
+      db.prepare(
+        "UPDATE jobs SET status=?, current_step=?, progress=?, finished_at=? WHERE id=?",
+      ).run("done", 8, 100, new Date().toISOString(), job.id);
       job.status = "done";
+      job.currentStep = 8;
+      job.progress = 100;
+      // Emit a final progress event so listenToJob's replay shows 100% to
+      // late subscribers, not 50% from the rendering step.
+      job.emitter.emit("event", {
+        type: "progress",
+        payload: { status: "done", currentStep: 8, totalSteps: TOTAL_STEPS, progress: 100 },
+      });
       job.emitter.emit("event", { type: "done", payload: { videoId } });
     } catch (e) {
       writeError(job, e);
