@@ -1,7 +1,6 @@
 import { Outlet, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { Film, Library, Settings, Clapperboard, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Toaster } from './ui/toaster';
 import { useAppStore } from '@/stores/appStore';
 import { useSettings } from '@/hooks/useApi';
 
@@ -106,8 +105,6 @@ export function AppLayout() {
           </div>
         </div>
       </main>
-      
-      <Toaster />
     </div>
   );
 }

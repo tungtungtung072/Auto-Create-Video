@@ -227,7 +227,24 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       const m = /bytes=(\d+)-(\d*)/.exec(range);
       if (m) {
         const start = parseInt(m[1], 10);
-        const end = m[2] ? parseInt(m[2], 10) : size - 1;
+        const requestedEnd = m[2] ? parseInt(m[2], 10) : size - 1;
+        // RFC 7233 §2.1: if last-byte-pos is >= current length, it is
+        // taken to be one less than the current length — i.e. clamp,
+        // don't reject. Only `start >= size` (or a malformed range) is
+        // unsatisfiable per §4.4 and must return 416 with
+        // `Content-Range: bytes */<size>`.
+        if (
+          !Number.isFinite(start) ||
+          !Number.isFinite(requestedEnd) ||
+          start < 0 ||
+          requestedEnd < start ||
+          start >= size
+        ) {
+          reply.code(416);
+          reply.header("Content-Range", `bytes */${size}`);
+          return { error: "Range Not Satisfiable" };
+        }
+        const end = Math.min(requestedEnd, size - 1);
         reply.code(206);
         reply.header("Content-Range", `bytes ${start}-${end}/${size}`);
         reply.header("Accept-Ranges", "bytes");
