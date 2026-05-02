@@ -61,4 +61,45 @@ describe("writeSettings: masked-key protection", () => {
     expect(enc).not.toContain(original);
     expect(decryptString(enc)).toBe(original);
   });
+
+  it("applySettingsToEnv clears the inactive TTS provider's env vars", async () => {
+    const { writeSettings, applySettingsToEnv } = await import("./settings-store.js");
+
+    // Ensure a clean slate so this test doesn't observe leaks from the host
+    // shell or earlier tests.
+    delete process.env.VIETNAMESE_API_KEY;
+    delete process.env.VIETNAMESE_VOICEID;
+    delete process.env.ELEVENLABS_API_KEY;
+    delete process.env.ELEVENLABS_VOICE_ID;
+
+    // Start on LucyLab — its vars get set, ElevenLabs vars stay clear.
+    writeSettings({
+      tts: { provider: "lucylab", apiKey: "lucy-key-1", voiceId: "voice-l1" },
+    });
+    applySettingsToEnv();
+    expect(process.env.VIETNAMESE_API_KEY).toBe("lucy-key-1");
+    expect(process.env.VIETNAMESE_VOICEID).toBe("voice-l1");
+    expect(process.env.ELEVENLABS_API_KEY).toBeUndefined();
+    expect(process.env.ELEVENLABS_VOICE_ID).toBeUndefined();
+
+    // Switch to ElevenLabs — old LucyLab vars must be cleared, not lingering.
+    writeSettings({
+      tts: { provider: "elevenlabs", apiKey: "el-key-2", voiceId: "voice-e2" },
+    });
+    applySettingsToEnv();
+    expect(process.env.ELEVENLABS_API_KEY).toBe("el-key-2");
+    expect(process.env.ELEVENLABS_VOICE_ID).toBe("voice-e2");
+    expect(process.env.VIETNAMESE_API_KEY).toBeUndefined();
+    expect(process.env.VIETNAMESE_VOICEID).toBeUndefined();
+
+    // Switch back to LucyLab with a different key — the ElevenLabs key
+    // from the prior iteration must not leak through.
+    writeSettings({
+      tts: { provider: "lucylab", apiKey: "lucy-key-3", voiceId: "voice-l3" },
+    });
+    applySettingsToEnv();
+    expect(process.env.VIETNAMESE_API_KEY).toBe("lucy-key-3");
+    expect(process.env.ELEVENLABS_API_KEY).toBeUndefined();
+    expect(process.env.ELEVENLABS_VOICE_ID).toBeUndefined();
+  });
 });

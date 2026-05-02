@@ -172,12 +172,19 @@ function maskKey(s: string): string {
 export function applySettingsToEnv(): AppSettings {
   const s = readSettings();
   process.env.TTS_PROVIDER = s.tts.provider;
+  // When the user switches TTS providers we must wipe the *other* provider's
+  // env vars; otherwise stale credentials linger in process.env and could
+  // leak to FFmpeg/child processes or libraries that read env directly.
   if (s.tts.provider === "lucylab") {
     process.env.VIETNAMESE_API_KEY = s.tts.apiKey;
     process.env.VIETNAMESE_VOICEID = s.tts.voiceId;
+    delete process.env.ELEVENLABS_API_KEY;
+    delete process.env.ELEVENLABS_VOICE_ID;
   } else {
     process.env.ELEVENLABS_API_KEY = s.tts.apiKey;
     process.env.ELEVENLABS_VOICE_ID = s.tts.voiceId;
+    delete process.env.VIETNAMESE_API_KEY;
+    delete process.env.VIETNAMESE_VOICEID;
   }
   process.env.TIKTOK_DISPLAY_NAME = s.branding.displayName;
   process.env.TIKTOK_HANDLE = s.branding.handle;

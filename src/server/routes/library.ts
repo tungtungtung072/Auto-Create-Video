@@ -228,6 +228,23 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       if (m) {
         const start = parseInt(m[1], 10);
         const end = m[2] ? parseInt(m[2], 10) : size - 1;
+        // RFC 7233 §4.4: an unsatisfiable byte range must return 416 with
+        // a Content-Range of `bytes */<size>`. Without this guard a client
+        // sending e.g. `Range: bytes=999999999-` would get a 206 with a
+        // negative Content-Length and an empty body, which Chrome reports
+        // as ERR_CONTENT_LENGTH_MISMATCH.
+        if (
+          !Number.isFinite(start) ||
+          !Number.isFinite(end) ||
+          start < 0 ||
+          end < start ||
+          start >= size ||
+          end >= size
+        ) {
+          reply.code(416);
+          reply.header("Content-Range", `bytes */${size}`);
+          return { error: "Range Not Satisfiable" };
+        }
         reply.code(206);
         reply.header("Content-Range", `bytes ${start}-${end}/${size}`);
         reply.header("Accept-Ranges", "bytes");

@@ -15,10 +15,34 @@ export function OnboardingPage() {
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
   const { settings, updateSettings } = useAppStore();
-  const { save } = useSettings();
+  const { save, test } = useSettings();
+  const [testing, setTesting] = useState(false);
 
   const handleNext = () => setStep(s => Math.min(s + 1, 5));
   const handleBack = () => setStep(s => Math.max(s - 1, 1));
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      // Persist current settings first (with any masks stripped) so the
+      // server-side test runs against the value the user just typed.
+      await save({ llm: settings.llm });
+      const r = await test('llm');
+      if (r.ok) {
+        toast({ title: 'Đã kết nối thành công', description: 'API key hợp lệ.' });
+      } else {
+        toast({
+          title: 'Không kết nối được',
+          description: r.reason ?? 'Kiểm tra lại API key.',
+          variant: 'destructive',
+        });
+      }
+    } catch (e) {
+      toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const handleDone = async () => {
     setSaving(true);
@@ -125,7 +149,13 @@ export function OnboardingPage() {
                     value={settings.llm.apiKey}
                     onChange={(e) => updateSettings({ llm: { ...settings.llm, apiKey: e.target.value } })}
                   />
-                  <Button variant="secondary" onClick={() => alert('Đã kết nối thành công!')}>Kiểm tra</Button>
+                  <Button
+                    variant="secondary"
+                    disabled={testing || !settings.llm.apiKey}
+                    onClick={handleTest}
+                  >
+                    {testing ? 'Đang kiểm tra...' : 'Kiểm tra'}
+                  </Button>
                 </div>
                 <a href="#" className="text-xs text-[var(--color-primary)] hover:underline inline-block mt-2">Lấy API key ở đâu?</a>
               </div>
