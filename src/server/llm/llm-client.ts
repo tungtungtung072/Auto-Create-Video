@@ -82,10 +82,10 @@ class GeminiClient implements LlmClient {
       },
     });
     const userPrompt = buildUserPrompt(article, options);
-    const res = await Promise.race([
+    const res = await withTimeout(
       model.generateContent(userPrompt),
-      timeoutReject(SCRIPT_GEN_TIMEOUT_MS),
-    ]);
+      SCRIPT_GEN_TIMEOUT_MS,
+    );
     const text = res.response.text();
     return parseScriptJson(text);
   }
@@ -244,10 +244,22 @@ class OllamaClient implements LlmClient {
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
-function timeoutReject(ms: number): Promise<never> {
-  return new Promise((_, rej) =>
-    setTimeout(() => rej(new Error(`LLM timeout after ${ms}ms`)), ms),
-  );
+/**
+ * Race a promise against a timeout, clearing the timer when the original
+ * promise settles. Critical: a bare `Promise.race([p, setTimeout(rej)])`
+ * leaks the timer when `p` wins, and the orphaned rejection later crashes
+ * the Node process under --unhandled-rejections=throw (default on Node 15+).
+ */
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, rej) => {
+    timer = setTimeout(() => rej(new Error(`LLM timeout after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function friendly(e: unknown): string {
