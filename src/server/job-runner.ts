@@ -358,6 +358,52 @@ async function runJob(job: ActiveJob, input: CreateJobInput, outputDir: string):
   job.emitter.emit("event", { type: "done", payload: { videoId: job.videoId } });
 }
 
+type ConsoleLevel = "log" | "info" | "warn" | "error";
+
+/**
+ * Wrap a function so that any output written to `console.log/info/warn/error`
+ * during its execution is forwarded to `onLine` (and still passed through to
+ * the original console). Used by both the main pipeline and the re-render
+ * flow so warnings and errors aren't lost from the job log.
+ *
+ * The `JobBusyError` guard at job-creation time ensures only one of these is
+ * ever active concurrently — see comment on JobBusyError above.
+ */
+async function withConsoleBridge(
+  onLine: (line: string, level: ConsoleLevel) => void,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const orig: Record<ConsoleLevel, (...args: unknown[]) => void> = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+  };
+  const intercept = (lvl: ConsoleLevel) => (...args: unknown[]) => {
+    const line = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
+    try {
+      onLine(line, lvl);
+    } catch {
+      /* swallow logger failures — don't kill the pipeline over a log line */
+    }
+    orig[lvl].apply(console, args as []);
+  };
+  console.log = intercept("log");
+  console.info = intercept("info");
+  console.warn = intercept("warn");
+  console.error = intercept("error");
+  try {
+    await fn();
+  } finally {
+    console.log = orig.log;
+    console.info = orig.info;
+    console.warn = orig.warn;
+    console.error = orig.error;
+  }
+}
+
 async function runPipelineWithBridge(
   scriptPath: string,
   log: (line: string) => void,
@@ -366,36 +412,16 @@ async function runPipelineWithBridge(
     progress: number,
   ) => void,
 ): Promise<void> {
-  // Capture console.log/info/warn/error during runPipeline → forward to log()
-  const orig = {
-    log: console.log,
-    info: console.info,
-    warn: console.warn,
-    error: console.error,
-  };
-  const intercept = (lvl: string) => (...args: unknown[]) => {
-    const line = args
-      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
-      .join(" ");
-    log(line);
-    if (/Step\s*4\//.test(line) || /TTS/i.test(line)) onProgress("tts", 50);
-    if (/Step\s*5\//.test(line) || /SFX/.test(line)) onProgress("tts-mid", 60);
-    if (/Step\s*6\//.test(line) || /Compose HTML/.test(line)) onProgress("rendering", 70);
-    if (/Step\s*7\//.test(line) || /Render with hyperframes/.test(line)) onProgress("rendering", 85);
-    orig[lvl as keyof typeof orig].apply(console, args as []);
-  };
-  console.log = intercept("log");
-  console.info = intercept("info");
-  console.warn = intercept("warn");
-  console.error = intercept("error");
-  try {
-    await runPipeline(scriptPath);
-  } finally {
-    console.log = orig.log;
-    console.info = orig.info;
-    console.warn = orig.warn;
-    console.error = orig.error;
-  }
+  await withConsoleBridge(
+    (line) => {
+      log(line);
+      if (/Step\s*4\//.test(line) || /TTS/i.test(line)) onProgress("tts", 50);
+      if (/Step\s*5\//.test(line) || /SFX/.test(line)) onProgress("tts-mid", 60);
+      if (/Step\s*6\//.test(line) || /Compose HTML/.test(line)) onProgress("rendering", 70);
+      if (/Step\s*7\//.test(line) || /Render with hyperframes/.test(line)) onProgress("rendering", 85);
+    },
+    () => runPipeline(scriptPath),
+  );
 }
 
 function writeError(job: ActiveJob, e: unknown): void {
@@ -479,17 +505,9 @@ function startRerenderInner(videoId: string, outputDir: string, script: Script):
 
       applySettingsToEnv();
 
-      // re-render needs a captured stdout too
-      const orig = console.log;
-      console.log = (...a: unknown[]) => {
-        log(a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" "));
-        orig(...(a as []));
-      };
-      try {
-        await runRerender(outputDir);
-      } finally {
-        console.log = orig;
-      }
+      // Capture the rerender's full console output (log + info + warn + error)
+      // through the shared bridge, matching the main pipeline behavior.
+      await withConsoleBridge((line) => log(line), () => runRerender(outputDir));
 
       // refresh thumbnail
       const videoPath = join(outputDir, "video.mp4");

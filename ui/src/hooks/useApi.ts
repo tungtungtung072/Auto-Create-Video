@@ -61,7 +61,7 @@ export function useCreateJob() {
         logLines: ["Đã đưa vào hàng đợi xử lý..."],
       };
       setCurrentJob(initialJob);
-      streamJob(jobId, setCurrentJob, () => refreshLibrary());
+      streamJob(jobId, videoId, setCurrentJob, () => refreshLibrary());
     } catch (e) {
       toast({
         title: "Không tạo được job",
@@ -78,12 +78,17 @@ export function useCreateJob() {
 
 function streamJob(
   jobId: string,
+  videoId: string,
   setJob: (j: Job | null) => void,
   onDone: () => void,
 ) {
   const es = new EventSource(`/api/jobs/${jobId}/stream`);
+  // Seed with videoId so the store keeps it across SSE patches — the first
+  // `progress` event would otherwise replace the store's job (which had it)
+  // with one missing it, until the final `done` event puts it back.
   let job: Job = {
     id: jobId,
+    videoId,
     status: "queued",
     currentStep: 0,
     totalSteps: 8,

@@ -12,7 +12,7 @@ import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyCors from "@fastify/cors";
 import fastifyMultipart from "@fastify/multipart";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import open from "open";
@@ -98,8 +98,16 @@ export async function startServer() {
   return app;
 }
 
-// CLI entry
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// CLI entry. We compare resolved paths instead of `import.meta.url ===
+// \`file://${argv[1]}\`` so this works on Windows, where argv[1] uses
+// backslashes while import.meta.url uses POSIX-style file:// URLs.
+const isMain = (() => {
+  try {
+    return fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? "");
+  } catch {
+    return false;
+  }
+})();
 if (isMain) {
   startServer().catch((e) => {
     console.error("Server failed to start:", e);
