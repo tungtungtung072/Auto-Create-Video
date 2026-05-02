@@ -131,9 +131,10 @@ export function writeSettings(patch: Partial<AppSettings>): AppSettings {
   const flat = flatten(patch as Record<string, unknown>, "");
   for (const [key, val] of flat) {
     let serialized: string;
-    if (SECRET_PATHS.includes(key) && typeof val === "string" && val.length > 0) {
-      // Skip overwrites that look like a mask (UI re-sends ••••)
-      if (/^•+$/.test(val)) continue;
+    if (SECRET_PATHS.includes(key)) {
+      if (typeof val !== "string" || val.length === 0) continue;
+      // Real API keys never contain "•" — UI re-sends masked value (full or partial).
+      if (val.includes("•")) continue;
       serialized = JSON.stringify(encryptString(val));
     } else {
       serialized = JSON.stringify(val);

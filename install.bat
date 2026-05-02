@@ -59,9 +59,17 @@ if errorlevel 1 (
 echo --^> Dang dung giao dien web...
 pushd ui
 call npm install --no-audit --no-fund
+set UI_DEPS_ERR=%errorlevel%
+if %UI_DEPS_ERR% neq 0 (
+  popd
+  echo [LOI] Khong cai duoc thu vien giao dien.
+  pause
+  exit /b 1
+)
 call npm run build
+set UI_BUILD_ERR=%errorlevel%
 popd
-if errorlevel 1 (
+if %UI_BUILD_ERR% neq 0 (
   echo [LOI] Khong dung duoc giao dien.
   pause
   exit /b 1

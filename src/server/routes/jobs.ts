@@ -7,6 +7,7 @@ import {
   cancelScript,
   startRerenderJob,
   getJob,
+  JobBusyError,
   type JobEvent,
 } from "../job-runner.js";
 import { ScriptSchema } from "../../render/script-schema.js";
@@ -36,8 +37,16 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       reply.code(400);
       return { error: "Yêu cầu không hợp lệ", details: parsed.error.format() };
     }
-    const { jobId, videoId } = startJob(parsed.data);
-    return { jobId, videoId };
+    try {
+      const { jobId, videoId } = startJob(parsed.data);
+      return { jobId, videoId };
+    } catch (e) {
+      if (e instanceof JobBusyError) {
+        reply.code(409);
+        return { error: e.message, code: e.code };
+      }
+      throw e;
+    }
   });
 
   app.get<{ Params: { id: string } }>("/api/jobs/:id/stream", async (req, reply) => {
@@ -118,6 +127,10 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
         const { jobId } = await startRerenderJob(req.params.videoId);
         return { jobId };
       } catch (e) {
+        if (e instanceof JobBusyError) {
+          reply.code(409);
+          return { error: e.message, code: e.code };
+        }
         reply.code(400);
         return { error: (e as Error).message };
       }

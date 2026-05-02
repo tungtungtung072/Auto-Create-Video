@@ -18,14 +18,26 @@ export function SettingsPage() {
     setLocalSettings(settings);
   }, [settings]);
 
+  // Real API keys never contain '•'. UI receives masked values like
+  // 'AIza••••••••xyz1' or '••••••••' from the server — we must drop those
+  // before sending the patch back, otherwise we overwrite the real key.
+  const stripMaskedSecrets = (
+    src: typeof localSettings,
+  ): Partial<typeof localSettings> => {
+    const patch = JSON.parse(JSON.stringify(src)) as typeof localSettings;
+    if (typeof patch.llm.apiKey === 'string' && patch.llm.apiKey.includes('•')) {
+      delete (patch.llm as Partial<typeof patch.llm>).apiKey;
+    }
+    if (typeof patch.tts.apiKey === 'string' && patch.tts.apiKey.includes('•')) {
+      delete (patch.tts as Partial<typeof patch.tts>).apiKey;
+    }
+    return patch;
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Strip masked values so server doesn't overwrite real keys with ••••
-      const patch = JSON.parse(JSON.stringify(localSettings)) as typeof localSettings;
-      if (/^•+/.test(patch.llm.apiKey)) patch.llm.apiKey = '';
-      if (/^•+/.test(patch.tts.apiKey)) patch.tts.apiKey = '';
-      // Only send fields that actually changed
+      const patch = stripMaskedSecrets(localSettings);
       await save(patch);
       toast({ title: 'Đã lưu cài đặt', description: 'Cấu hình của bạn đã được cập nhật.' });
     } catch (e) {
@@ -37,8 +49,8 @@ export function SettingsPage() {
 
   const handleTest = async (kind: 'llm' | 'tts') => {
     try {
-      // Save first so we test against the actual stored value
-      await save(localSettings);
+      // Save first (with masks stripped!) so we test against the actual stored value
+      await save(stripMaskedSecrets(localSettings));
       const r = await test(kind);
       if (r.ok) toast({ title: 'Kết nối thành công' });
       else toast({ title: 'Lỗi kết nối', description: r.reason ?? 'Không xác định', variant: 'destructive' });

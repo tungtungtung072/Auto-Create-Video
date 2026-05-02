@@ -58,6 +58,30 @@ interface ActiveJob {
 const TOTAL_STEPS = 8;
 const active = new Map<string, ActiveJob>();
 
+/**
+ * Job-busy error thrown when a new job is requested while another job is still running.
+ * Routes catch this and return HTTP 409.
+ *
+ * We enforce one job at a time because `runPipelineWithBridge` and the rerender flow
+ * monkey-patch the global `console` to capture pipeline logs; concurrent jobs would
+ * race on the global console and corrupt log output. They also compete for FFmpeg
+ * CPU/memory and the filesystem under a single output directory.
+ */
+export class JobBusyError extends Error {
+  readonly code = "JOB_BUSY";
+  constructor(activeJobId: string) {
+    super(`Có một công việc khác đang chạy (${activeJobId}). Vui lòng đợi xong rồi thử lại.`);
+    this.name = "JobBusyError";
+  }
+}
+
+function findRunningJob(): ActiveJob | undefined {
+  for (const job of active.values()) {
+    if (job.status !== "done" && job.status !== "error") return job;
+  }
+  return undefined;
+}
+
 function scriptForUi(script: Script) {
   return {
     title: script.metadata.title,
@@ -112,6 +136,9 @@ export function cancelScript(jobId: string): boolean {
 }
 
 export function startJob(input: CreateJobInput, existingVideoId?: string): { jobId: string; videoId: string } {
+  const running = findRunningJob();
+  if (running) throw new JobBusyError(running.id);
+
   const db = getDb();
   const paths = getAppPaths();
   const settings = readSettings();
@@ -408,6 +435,9 @@ export async function startRerenderJob(videoId: string): Promise<{ jobId: string
 }
 
 function startRerenderInner(videoId: string, outputDir: string, script: Script): { jobId: string } {
+  const running = findRunningJob();
+  if (running) throw new JobBusyError(running.id);
+
   const db = getDb();
   const id = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const paths = getAppPaths();
