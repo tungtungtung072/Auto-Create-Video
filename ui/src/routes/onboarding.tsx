@@ -23,10 +23,16 @@ export function OnboardingPage() {
 
   const handleTest = async () => {
     setTesting(true);
+    // Snapshot what the user has typed locally. `save()` calls
+    // `setSettings(serverResponse)` which replaces the entire store —
+    // wiping any unsaved edits on later wizard steps and overwriting the
+    // typed-in apiKey with the server's masked form (e.g. "AIza••••1234").
+    // After save we restore the local snapshot so the wizard state stays
+    // exactly as the user left it.
+    const snapshot = settings;
     try {
-      // Persist current settings first (with any masks stripped) so the
-      // server-side test runs against the value the user just typed.
-      await save({ llm: settings.llm });
+      await save({ llm: snapshot.llm });
+      updateSettings(snapshot);
       const r = await test('llm');
       if (r.ok) {
         toast({ title: 'Đã kết nối thành công', description: 'API key hợp lệ.' });
