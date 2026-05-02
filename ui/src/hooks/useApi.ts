@@ -125,17 +125,27 @@ function streamJob(
   });
 
   es.addEventListener("error", (ev) => {
+    // Two distinct cases share this listener:
+    //   1. Server-emitted named `error` event — a MessageEvent with JSON .data.
+    //      The job has actually failed; show toast and close the stream.
+    //   2. Network-level error — a plain Event with no `.data` property.
+    //      EventSource auto-reconnects; do nothing so we don't show a false
+    //      "job failed" toast for a transient blip.
+    const raw = (ev as MessageEvent).data;
+    if (raw == null || typeof raw !== "string") return;
+    let data: { message?: string } = {};
     try {
-      const data = JSON.parse((ev as MessageEvent).data ?? "{}");
-      update({ status: "error", error: data.message });
-      toast({
-        title: "Tạo video thất bại",
-        description: data.message ?? "Lỗi không xác định",
-        variant: "destructive",
-      });
+      data = JSON.parse(raw);
     } catch {
-      // network-level error events don't have data — let the user retry
+      return; // malformed payload — ignore
     }
+    update({ status: "error", error: data.message });
+    toast({
+      title: "Tạo video thất bại",
+      description: data.message ?? "Lỗi không xác định",
+      variant: "destructive",
+    });
+    es.close();
   });
 
   // Keep ref so caller could close it
@@ -165,6 +175,9 @@ export function useCancelJob() {
 
 export function useLibrary() {
   const { videos, setVideos } = useAppStore();
+  // Subscribe to the refresh tick so a `refreshLibrary()` call elsewhere
+  // (e.g. on job completion) triggers a re-fetch here.
+  const libraryRefreshTick = useAppStore((s) => s.libraryRefreshTick);
   const [loading, setLoading] = useState(false);
   const refresh = useCallback(
     async (params?: { search?: string; status?: string; sort?: string }) => {
@@ -186,7 +199,7 @@ export function useLibrary() {
   );
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, libraryRefreshTick]);
   return { videos, loading, refresh };
 }
 
